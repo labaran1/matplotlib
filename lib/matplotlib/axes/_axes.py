@@ -3,6 +3,7 @@ import itertools
 import logging
 import math
 from numbers import Integral, Number
+from datetime import timedelta
 
 import numpy as np
 from numpy import ma
@@ -3180,7 +3181,7 @@ class Axes(_AxesBase):
               errors.
             - *None*: No errorbar.
 
-            Note that all error arrays should have *positive* values.
+            All values must be >= 0.
 
             See :doc:`/gallery/statistics/errorbar_features`
             for an example on the usage of ``xerr`` and ``yerr``.
@@ -3283,6 +3284,19 @@ class Axes(_AxesBase):
         x, y = np.atleast_1d(x, y)  # Make sure all the args are iterable.
         if len(x) != len(y):
             raise ValueError("'x' and 'y' must have the same size")
+
+        def has_negative_values(array):
+            if array is None:
+                return False
+            try:
+                return np.any(array < 0)
+            except TypeError:  # if array contains 'datetime.timedelta' types
+                return np.any(array < timedelta(0))
+
+        if has_negative_values(xerr):
+            raise ValueError("'xerr' must not contain negative values")
+        if has_negative_values(yerr):
+            raise ValueError("'yerr' must not contain negative values")
 
         if isinstance(errorevery, Integral):
             errorevery = (0, errorevery)
@@ -5629,9 +5643,8 @@ default: :rc:`scatter.edgecolors`
             expanded as needed into the appropriate 2D arrays, making a
             rectangular grid.
 
-        shading : {'flat', 'nearest', 'auto'}, optional
-            The fill style for the quadrilateral; defaults to 'flat' or
-            :rc:`pcolor.shading`. Possible values:
+        shading : {'flat', 'nearest', 'auto'}, default: :rc:`pcolor.shading`
+            The fill style for the quadrilateral. Possible values:
 
             - 'flat': A solid color is used for each quad. The color of the
               quad (i, j), (i+1, j), (i, j+1), (i+1, j+1) is given by
@@ -6016,9 +6029,10 @@ default: :rc:`scatter.edgecolors`
         # convert to one dimensional array
         C = C.ravel()
 
-        snap = kwargs.get('snap', rcParams['pcolormesh.snap'])
+        kwargs.setdefault('snap', rcParams['pcolormesh.snap'])
+
         collection = mcoll.QuadMesh(
-            coords, antialiased=antialiased, shading=shading, snap=snap,
+            coords, antialiased=antialiased, shading=shading,
             array=C, cmap=cmap, norm=norm, alpha=alpha, **kwargs)
         collection._scale_norm(norm, vmin, vmax)
         self._pcolor_grid_deprecation_helper()

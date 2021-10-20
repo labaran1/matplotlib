@@ -1,10 +1,12 @@
 # Matplotlib documentation build configuration file, created by
 # sphinx-quickstart on Fri May  2 12:33:25 2008.
 #
-# This file is execfile()d with the current directory set to its containing dir.
+# This file is execfile()d with the current directory set to its containing
+# dir.
 #
 # The contents of this file are pickled, so don't put values in the namespace
-# that aren't pickleable (module imports are okay, they're removed automatically).
+# that aren't pickleable (module imports are okay, they're removed
+# automatically).
 #
 # All configuration values have a default value; values that are commented out
 # serve to show the default value.
@@ -22,12 +24,16 @@ import sphinx
 from datetime import datetime
 import time
 
+# Release mode enables optimizations and other related options.
+is_release_build = tags.has('release')  # noqa
+
 # are we running circle CI?
 CIRCLECI = 'CIRCLECI' in os.environ
 
 # Parse year using SOURCE_DATE_EPOCH, falling back to current time.
 # https://reproducible-builds.org/specs/source-date-epoch/
-sourceyear = datetime.utcfromtimestamp(int(os.environ.get('SOURCE_DATE_EPOCH', time.time()))).year
+sourceyear = datetime.utcfromtimestamp(
+    int(os.environ.get('SOURCE_DATE_EPOCH', time.time()))).year
 
 # If your extensions are in another directory, add it here. If the directory
 # is relative to the documentation root, use os.path.abspath to make it
@@ -88,6 +94,7 @@ def _check_dependencies():
         "matplotlib": 'matplotlib',
         "numpydoc": 'numpydoc',
         "PIL.Image": 'pillow',
+        "pydata_sphinx_theme": 'pydata_sphinx_theme',
         "sphinx_copybutton": 'sphinx_copybutton',
         "sphinx_gallery": 'sphinx_gallery',
         "sphinxcontrib.inkscapeconverter": 'sphinxcontrib-svg2pdfconverter',
@@ -175,14 +182,13 @@ sphinx_gallery_conf = {
     'remove_config_comments': True,
     'min_reported_time': 1,
     'thumbnail_size': (320, 224),
-    'compress_images': () if CIRCLECI else ('thumbnails', 'images'),
+    # Compression is a significant effort that we skip for local and CI builds.
+    'compress_images': ('thumbnails', 'images') if is_release_build else (),
     'matplotlib_animations': True,
-    # 3.7 CI doc build should not use hidpi images during the testing phase
-    'image_srcset': [] if sys.version_info[:2] == (3, 7) else ["2x"],
+    'image_srcset': ["2x"],
     'junit': '../test-results/sphinx-gallery/junit.xml' if CIRCLECI else '',
 }
 
-plot_gallery = 'True'
 mathmpl_fontsize = 11.0
 mathmpl_srcset = ['2x']
 
@@ -222,9 +228,11 @@ html_context = {
 }
 
 project = 'Matplotlib'
-copyright = ('2002 - 2012 John Hunter, Darren Dale, Eric Firing, '
-             'Michael Droettboom and the Matplotlib development '
-             f'team; 2012 - {sourceyear} The Matplotlib development team')
+copyright = (
+    '2002 - 2012 John Hunter, Darren Dale, Eric Firing, Michael Droettboom '
+    'and the Matplotlib development team; '
+    f'2012 - {sourceyear} The Matplotlib development team'
+)
 
 
 # The default replacements for |version| and |release|, also used in various
@@ -293,7 +301,9 @@ html_theme = "pydata_sphinx_theme"
 html_logo = "_static/logo2.svg"
 html_theme_options = {
     "logo_link": "index",
-    "collapse_navigation": True if CIRCLECI else False,
+    # collapse_navigation in pydata-sphinx-theme is slow, so skipped for local
+    # and CI builds https://github.com/pydata/pydata-sphinx-theme/pull/386
+    "collapse_navigation": not is_release_build,
     "icon_links": [
         {
             "name": "gitter",
@@ -319,7 +329,7 @@ html_theme_options = {
     "show_prev_next": False,
     "navbar_center": ["mpl_nav_bar.html"],
 }
-include_analytics = False
+include_analytics = is_release_build
 if include_analytics:
     html_theme_options["google_analytics_id"] = "UA-55954603-1"
 
@@ -383,8 +393,10 @@ html_favicon = '_static/favicon.ico'
 # The paper size ('letter' or 'a4').
 latex_paper_size = 'letter'
 
-# Grouping the document tree into LaTeX files. List of tuples
-# (source start file, target name, title, author, document class [howto/manual]).
+# Grouping the document tree into LaTeX files.
+# List of tuples:
+#   (source start file, target name, title, author,
+#    document class [howto/manual])
 
 latex_documents = [
     ('contents', 'Matplotlib.tex', 'Matplotlib',
@@ -538,12 +550,29 @@ graphviz_dot = shutil.which('dot')
 # graphviz_output_format = 'svg'
 
 
+def reduce_plot_formats(app):
+    # Fox CI and local builds, we don't need all the default plot formats, so
+    # only generate the directly useful one for the current builder.
+    if app.builder.name == 'html':
+        keep = 'png'
+    elif app.builder.name == 'latex':
+        keep = 'pdf'
+    else:
+        return
+    app.config.plot_formats = [entry
+                               for entry in app.config.plot_formats
+                               if entry[0] == keep]
+
+
 def setup(app):
     if any(st in version for st in ('post', 'alpha', 'beta')):
         bld_type = 'dev'
     else:
         bld_type = 'rel'
     app.add_config_value('releaselevel', bld_type, 'env')
+
+    if not is_release_build:
+        app.connect('builder-inited', reduce_plot_formats)
 
 # -----------------------------------------------------------------------------
 # Source code links
@@ -552,8 +581,8 @@ link_github = True
 # You can add build old with link_github = False
 
 if link_github:
-    import re
     import inspect
+    from packaging.version import parse
 
     extensions.append('sphinx.ext.linkcode')
 
@@ -595,10 +624,8 @@ if link_github:
         except (OSError, TypeError):
             lineno = None
 
-        if lineno:
-            linespec = "#L%d-L%d" % (lineno, lineno + len(source) - 1)
-        else:
-            linespec = ""
+        linespec = (f"#L{lineno:d}-L{lineno + len(source) - 1:d}"
+                    if lineno else "")
 
         startdir = Path(matplotlib.__file__).parent.parent
         fn = os.path.relpath(fn, start=startdir).replace(os.path.sep, '/')
@@ -606,12 +633,9 @@ if link_github:
         if not fn.startswith(('matplotlib/', 'mpl_toolkits/')):
             return None
 
-        m = re.match(r'^.*post[0-9]+\+\w([a-z0-9]+).\w+$', matplotlib.__version__)
-        if m:
-            return "https://github.com/matplotlib/matplotlib/blob/%s/lib/%s%s" % (
-                    m.group(1), fn, linespec)
-        else:
-            return "https://github.com/matplotlib/matplotlib/blob/v%s/lib/%s%s" % (
-                    matplotlib.__version__, fn, linespec)
+        version = parse(matplotlib.__version__)
+        tag = 'master' if version.is_devrelease else f'v{version.public}'
+        return ("https://github.com/matplotlib/matplotlib/blob"
+                f"/{tag}/lib/{fn}{linespec}")
 else:
     extensions.append('sphinx.ext.viewcode')
